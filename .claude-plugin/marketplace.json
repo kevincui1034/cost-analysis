@@ -1,0 +1,24 @@
+{
+  "name": "cost-analysis",
+  "owner": {
+    "name": "Kevin Cui",
+    "url": "https://github.com/kevincui1034"
+  },
+  "metadata": {
+    "description": "A single-skill marketplace distributing the Cost & Margin Analysis skill for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "cost-analysis",
+      "source": "./",
+      "description": "Cost & margin audit: inventories paid surfaces, models pricing, and computes per-plan / per-user margins with redlines flagged.",
+      "version": "1.0.0",
+      "keywords": [
+        "cost-analysis",
+        "margin-analysis",
+        "unit-economics",
+        "pricing"
+      ]
+    }
+  ]
+}

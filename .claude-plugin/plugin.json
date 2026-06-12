@@ -1,0 +1,23 @@
+{
+  "name": "cost-analysis",
+  "displayName": "Cost & Margin Analysis",
+  "version": "1.0.0",
+  "description": "Inventories every paid API call, SDK, scraper, render provider, and managed service in a project, attaches per-unit rates from canonical sources, models the pricing structure, and produces per-plan / per-user / per-feature margin math with redlines flagged. Stack-agnostic; diffs against prior snapshots in memory and can persist a COSTS.md.",
+  "author": {
+    "name": "Kevin Cui",
+    "url": "https://github.com/kevincui1034"
+  },
+  "homepage": "https://github.com/kevincui1034/cost-analysis",
+  "repository": "https://github.com/kevincui1034/cost-analysis",
+  "license": "MIT",
+  "keywords": [
+    "cost-analysis",
+    "margin-analysis",
+    "unit-economics",
+    "pricing",
+    "finops",
+    "saas-margins",
+    "claude-code",
+    "skill"
+  ]
+}
