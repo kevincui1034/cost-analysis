@@ -1,9 +1,9 @@
 # Cost & Margin Analysis
 
 > ### 💸 Are you making money on every plan — or quietly subsidizing your heaviest users?
-> One command reads your codebase, inventories every paid API, render, and
+> One command reads your codebase, inventories every paid API, and
 > managed service, pulls **live** provider rates off the web, and hands you your
-> true margin **per credit, per render, per plan** — with the loss-making paths
+> true margin **per credit, per plan** — with the loss-making paths
 > flagged in red. No spreadsheet. No guessing. No "we'll figure out unit
 > economics later."
 
