@@ -16,7 +16,7 @@ description: >-
   `/cost-analysis`.
 metadata:
   author: kevincui1034
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # Cost & Margin Analysis
@@ -24,6 +24,17 @@ metadata:
 Inventory every $-generating call in the project, attach a per-unit cost, model the pricing structure, and produce **per-plan / per-user / per-feature** margin math with redlines flagged. Optionally persist the result as a dated memory snapshot and a checked-in `COSTS.md`.
 
 This skill is **stack-agnostic**. It detects the project shape first, then runs only the analyses that apply. If the repo has prior cost snapshots in auto-memory, it diffs against them instead of starting cold.
+
+## Scope & boundaries
+
+**Use this for** recurring, *variable* run-cost and per-unit margins on a software product: what each paid API / SDK / service costs per call, whether each pricing tier is profitable, and where a redlining user breaks the model.
+
+**Not built for:**
+- **One-time / fixed costs** — dev time, initial build, design, data migration. Fixed monthly infra (a flat DB tier, a seat you pay regardless of usage) is an *input* to the break-even extra, not a per-unit margin.
+- **Formal finance** — this is engineering-grade unit economics, not accounting. It does not do taxes, revenue recognition, amortization schedules, or GAAP. Feed its COGS/margin outputs into real finance tooling; don't treat them as filings.
+- **Traffic / capacity forecasting** — it prices the calls you make, not how many you'll make. The growth-curve extra models 10×/100×, but only off an assumed curve you supply.
+- **Vendor negotiation / contract discovery** — it reads public + in-repo rates. If you have committed-use or negotiated pricing, supply it; the skill can't discover it.
+- **A project with nothing charged** — if there are no paid surfaces and no pricing model, say so in one line and stop; there's no economics to model.
 
 ## How to use this skill
 
@@ -210,6 +221,64 @@ Output in this structure. Don't pad sections that don't apply — skip them with
 ### Open questions for the user
 - <rates you couldn't confirm, plan tiers unknown, etc.>
 ```
+
+#### Worked example (illustrative — fictional app, invented numbers)
+
+A compact end-to-end example of the shape the report should take. The app and
+every number are made up to show the format — do not treat any rate here as real.
+
+---
+
+## Cost & Margin Analysis — Recapp (2026-07-02)
+
+**Stack detected**: Next.js + Postgres (Supabase) SaaS that summarizes meeting notes via one LLM call per summary. Revenue: Stripe subscriptions (Free / Pro) plus a per-summary "credit" top-up. Transactional email via Resend.
+**Pricing model**: subscription + top-up credits (1 credit = 1 summary).
+**Diff basis**: cold baseline (no prior snapshot).
+
+### Paid surfaces inventory
+
+| Surface | Provider | $/unit | Unit basis | Rate source | Det/Var | Gated? | Per-user? |
+|---|---|---|---|---|---|---|---|
+| Summarize | OpenAI gpt-x-mini | $0.0021 | ~3k in + 400 out tok | web-confirmed 2026-07-02 | det | yes (credit) | yes |
+| DB/host | Supabase Pro | $25/mo | flat tier | repo | fixed | n/a | no |
+| Email | Resend | $0.0004 | per-email | **estimate** | det | no | on signup |
+| Payments | Stripe | 2.9% + $0.30 | per-charge | canonical | det | n/a | on purchase |
+
+### Unit economics
+
+Credit stack → face value **$0.02** · COGS/credit **≈ $0.0021** · realized price/credit: Pro grant $20 ÷ 500 = **$0.040**, top-up $5 ÷ 200 = **$0.025**.
+
+#### Plan: Free ($0 · 20 summaries/mo)
+- Avg user (6/mo): rev $0 · COGS $0.013 · **−$0.013/mo** (acceptable CAC)
+- Redlining user (all 20): COGS $0.042 · **−$0.042/mo** — capped by the grant ✅
+
+#### Plan: Pro ($20/mo · 500 credits)
+- Avg user (80/mo): rev $19.12 net of Stripe · COGS $0.168 · **99.1%**
+- Redlining (500 + refills): rev $19.12 · COGS $1.05 · **94.5%** ✅
+
+### Cross-plan / cross-pack comparison
+
+| Acquisition path | $/credit |
+|---|---|
+| Pro subscription grant | $0.040 |
+| Top-up pack (200) | $0.025 ← **cheaper than the subscription credit** |
+
+### Findings (severity-ordered)
+- **High**: top-up ($0.025/cr) undercuts the subscription credit ($0.040/cr) — heavy Pro users rationally buy top-ups instead of upgrading tiers (cannibalization). Re-price top-up ≥ subscription $/credit.
+- **Medium**: Resend rate is an *estimate*, not confirmed against the live plan — verify before trusting the email COGS line.
+- **Low**: Supabase $25/mo flat isn't attributed per-user; immaterial below ~10k MAU, revisit at the next tier breakpoint.
+
+### Assumptions made
+- Avg Pro user = 80 summaries/mo (no usage data yet — stated, conservative).
+- Token mix 3k in / 400 out sampled from one representative prompt.
+
+### Open questions for the user
+- Real per-user summary distribution, to replace the 80/mo assumption?
+- Is Resend on the free tier or a paid plan?
+
+---
+
+Note how the example carries **provenance tags** (`estimate`, `web-confirmed`) and the **det/var** column straight into the inventory, splits the **three-layer credit stack**, and lands a **cross-pack cannibalization** finding — those are the load-bearing habits, not the specific numbers.
 
 ### Step 10 — Persist & offer to write file
 

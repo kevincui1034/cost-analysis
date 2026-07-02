@@ -19,15 +19,17 @@ it diffs against them instead of starting cold.
 
 ## What it does
 
-- **Inventories paid surfaces** — Anthropic, OpenAI, Gemini, Replicate, Fal,
-  Apify, Stripe, Resend, Vercel, Supabase, Upstash, Sentry, PostHog, and more.
+- **Inventories paid surfaces** — LLM/AI APIs, media & asset generation,
+  scrapers & data APIs, hosting & compute, databases, storage/CDN, email &
+  messaging, payments, observability, and auth — every SDK, endpoint, or managed
+  service that costs money.
 - **Sources per-unit rates** from in-repo rate tables → memory snapshots →
   (optionally) provider pricing pages via WebFetch, asking before it fetches.
-- **Models the pricing structure** — subscriptions, top-up packs, usage-based,
-  free tiers, trial/promo credits.
+- **Models the pricing structure** — subscriptions, seat-based, top-up packs,
+  usage-based/metered, free tiers, trial/promo credits.
 - **Computes three margin scenarios** per plan — average user, redlining user
   (max COGS at min payment), and heaviest legitimate power user — as
-  `revenue − COGS = gross margin %`, including Stripe fees.
+  `revenue − COGS = gross margin %`, including payment-processor fees.
 - **Compares across plans and packs** and flags non-monotonic or
   cannibalizing pricing.
 - **Diffs against prior snapshots** and surfaces margin drift as a finding.
@@ -40,6 +42,15 @@ it diffs against them instead of starting cold.
 > calculator as an input.
 
 ## What's new
+
+### 1.3.0 — worked example + scope
+
+- **Worked example** — a filled, end-to-end sample report (fictional app,
+  invented numbers) so the expected output shape is concrete, not just a
+  skeleton.
+- **Scope & boundaries** — an explicit "not built for" section (one-time/build
+  costs, formal finance/tax, traffic forecasting, contract-rate discovery) to
+  keep the skill from over-reaching.
 
 ### 1.2.0 — generalized
 
@@ -89,7 +100,7 @@ In Claude Code, run:
 ```
 
 Update later with `/plugin marketplace update cost-analysis`. Because the plugin
-pins `version: 1.2.0`, you'll receive changes when that version is bumped.
+pins `version: 1.3.0`, you'll receive changes when that version is bumped.
 
 ### Option B — Drop the skill in manually
 
