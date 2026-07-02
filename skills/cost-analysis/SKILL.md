@@ -16,7 +16,7 @@ description: >-
   `/cost-analysis`.
 metadata:
   author: kevincui1034
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # Cost & Margin Analysis
@@ -42,7 +42,7 @@ Look for prior cost / pricing snapshots in auto-memory. Read in this order:
 
 If snapshots exist, this run becomes a **diff against the most recent one**. State that upfront in the report so the user knows you're not starting from scratch.
 
-**A newer snapshot is not automatically the whole story.** Also read any *dated rate-change / reprice / denomination* memories that post-date the newest full snapshot (e.g. `denomination-reprice-*`, `cost-rate-*`). A small later memory can silently invalidate the snapshot's **units** without invalidating its dollar math. Real example from this project: a snapshot quoted credits at `1 cr = $0.10`, but a later reprice memory redenominated to `1 cr = $0.01` and ×10'd every credit count — the snapshot's *dollar* margins still held, but its *credit counts* were all 10× stale. Reconcile these before quoting any figure, and say which unit you're using.
+**A newer snapshot is not automatically the whole story.** Also read any *dated rate-change / reprice / denomination* memories that post-date the newest full snapshot (naming like `*-reprice-*`, `cost-rate-*`). A small later memory can silently invalidate the snapshot's **units** without invalidating its underlying dollar math — e.g. an in-app currency gets redenominated (say 1 unit = $0.10 → $0.01, with every count ×10 to compensate), leaving the snapshot's *dollar* margins correct but its *unit counts* stale by that factor. Reconcile before quoting any figure, and state which unit you're using.
 
 If no snapshots exist, this is a cold audit — say so, and after the report ask the user whether to persist a baseline snapshot to memory.
 
@@ -58,6 +58,12 @@ Read in parallel, then write a one-paragraph stack summary:
 - Glob for likely cost-table files: `**/credits.ts`, `**/pricing.ts`, `**/plans.ts`, `**/quota.ts`, `**/billing.ts`, `**/cost*.ts`
 
 Catalog the paid surfaces detected. For each, record: **provider name**, **what it's used for in this app**, **SDK / endpoint touched**, **billing model** (per-token, per-second, per-request, monthly tier, free-quota-then-paid).
+
+**Classify each surface as deterministic vs. variable — it's the single most decision-relevant attribute:**
+- **Deterministic** — cost is fixed by the request *before* you make it: per-request, per-token (by input/output length), per-item, per-second-of-*output*, flat per-tier. These you can price exactly.
+- **Variable / uncapped** — cost tracks something you don't control at call time: per-second-of-*runtime* or per-GB-second of compute (a slow, retried, or stuck job bills unboundedly), per-CU/actor-compute, egress/bandwidth, per-MAU. These need a **cap or budget alarm**, not just a per-unit rate — flag any uncapped path in the findings.
+
+Two same-named units can sit on opposite sides of this axis — a provider's "per second" may mean output-seconds on one product and machine-runtime-seconds on another, and the latter can cost many times more. Read the pricing page to see which, and never average a deterministic rate with a variable one.
 
 ### Step 3 — Per-unit rate lookup
 
@@ -79,18 +85,20 @@ Then fill in `$/unit` using this priority:
 3. **Provider docs via WebFetch** — per the user's Step-3 mode above. When web rate ≠ in-repo rate, flag the delta as a finding (the repo might be charging old rates against current provider costs, or vice versa). Don't silently overwrite the repo rate in the analysis — show both and let the user judge which is canonical.
 4. **Ask the user** for any rate you can't source from any of the above. Don't invent. A wrong rate makes every downstream number wrong.
 
+**Tag every rate with its provenance and date** — `repo` / `memory` / `web-confirmed <date>` / `estimate` — and carry the tag into the report, so unconfirmed or aging rates are visible at a glance rather than blending in with hard numbers.
+
 For tiered providers (Vercel, Resend, Supabase, Upstash, Sentry, PostHog, etc.), record the **plan the project is on** (ask if unclear) plus the **next-tier breakpoint** — many "cheap" services step-function on row count, bandwidth, or seats. If the user opted into WebFetch, also fetch the current public tier breakpoints (these change more often than per-unit rates).
 
-**Prefer the provider's own live model/pricing page over search-result summaries.** Aggregators, resellers, and search snapshots are frequently stale or plain wrong. This skill's origin run saw a search snapshot quote Kling at `$0.168/s` when the live Fal model page said `$0.084/s`, and a spread of contradictory Seedance numbers across reseller blogs. WebFetch the canonical page (`fal.ai/models/...`, `replicate.com/<owner>/<model>`, the provider's `/pricing`) and trust it over any third-party mirror. If you can only find an aggregator number, mark it *estimate* and flag it.
+**Prefer the provider's own live pricing/product page over search-result summaries.** Aggregators, resellers, and search snapshots are frequently stale or plain wrong, and often quote a different SKU than the one you're on. WebFetch the canonical source — the provider's `/pricing` page or the specific model/product page — and trust it over any third-party mirror. If you can only find a third-party number, mark it *estimate* and flag it for confirmation.
 
-**Verify which provider AND model-version a code path actually routes to before attaching a rate.** The same product name can mean very different money across providers/versions. This run: `Seedance 1 Pro` on Replicate is `$0.15/s` at 1080p, but `Seedance 2.0` on Fal is `~$0.68/s` at 1080p — 4.5×. Read the wrapper for the real slug/endpoint (`.../v3/standard/...` vs `.../v3/pro/...`, `seedance-1-pro` vs `seedance-2.0`) rather than matching on the friendly name.
+**Verify which provider, SKU, *and* version a code path actually routes to before attaching a rate.** The same product name can mean very different money across providers, tiers, and versions — a "mini"/"lite"/"fast" variant, a newer model generation, or the same model on a cheaper host can differ by multiples. Read the call-site for the real model ID / endpoint / SKU rather than matching on the friendly name.
 
 #### Parallelizing the rate lookup (sub-agents)
 
 When there are many providers to web-verify, fan the lookups out to sub-agents — but keep the fan-out **flat and shallow**:
 
-- **One agent per provider-family** (e.g. "all Replicate/Fal render models", "all LLM + transcription rates"). Grouping by provider lets each agent hit related pages and cross-check them.
-- **Leaf agents only — forbid nested spawning.** Tell each research agent explicitly: *do the WebFetches yourself and return the table; do NOT spawn your own sub-agents.* In this skill's origin run a research agent spawned its own children and then sat in a wait-loop "completing" repeatedly without ever returning findings — its final message was a stray "I'll wait for the agents…" line instead of data, and its work had to be redone inline. Deep nesting also hides real results behind an intermediary that may summarize or drop them.
+- **One agent per provider-family** (e.g. one for all LLM/token rates, one for all render/media rates, one for infra/hosting). Grouping related pages lets each agent cross-check them.
+- **Leaf agents only — forbid nested spawning.** Tell each research agent explicitly: *do the WebFetches yourself and return the table; do NOT spawn your own sub-agents.* A research agent that spawns its own children tends to stall — waiting on descendants it can't observe — and return a status line instead of data, forcing the work to be redone inline. Deep nesting also hides real results behind an intermediary that may summarize or drop them.
 - **The agent's final message MUST be the structured findings table** — `Model | Tier/Resolution | Provider | Published price | Unit | Source URL | Date-confirmed` — not a status update. Say this in the prompt.
 - **If an agent returns a non-answer, don't ping it in a loop.** Stop it and either re-spawn a fresh leaf agent or just run the handful of WebFetches yourself from the main loop — often faster than babysitting a stuck agent.
 - For heavy, repeatable audits a deterministic `Workflow` (fan-out → verify → synthesize) is more reliable than ad-hoc `Agent` calls — but only when the user has opted into orchestration.
@@ -112,14 +120,15 @@ Output a compact inventory table:
 Find how revenue comes in. Look for:
 - **Subscriptions**: Stripe products + prices, plan table (`plans.ts` / `usersTable.plan`), monthly/annual amounts.
 - **Top-ups / one-time**: Stripe `checkout.session.mode === 'payment'`, in-app credit packs, "buy more X" flows.
-- **Usage-based**: per-call billing, metered prices.
+- **Usage-based / metered**: per-call billing, metered prices, pay-as-you-go resale of an upstream API.
+- **Seat-based (B2B)**: per-seat/per-MAU pricing — revenue scales with users, and so may an upstream per-MAU cost (auth, analytics), so margin can be seat-count-invariant *or* thin depending on which grows faster.
 - **Free tier**: what's actually free, monthly grants, daily safety caps.
 - **Trials / promo credits**: free credits on signup, referral grants.
 
-Identify the **revenue unit** for each (per-month, per-credit, per-API-call). For any in-app currency (credits/tokens), pin down **three distinct numbers that are easy to conflate**:
+Identify the **revenue unit** for each (per-month, per-seat, per-credit, per-API-call). For any **in-app currency** (credits, tokens, points, included-usage units), pin down **three distinct numbers that are easy to conflate**:
 1. **Face value** — the accounting unit the app assigns (e.g. "1 credit = $0.01").
-2. **COGS per unit** — what the provider actually costs per unit of that currency's worth of output (e.g. render SKUs priced at a 50% floor ⇒ ~$0.005 provider cost per $0.01 credit).
-3. **Realized price per unit** — what a user actually *pays* per unit, which varies by acquisition path: subscription grant ($29 ÷ 1,500 cr ≈ $0.019/cr), each top-up pack ($0.008–$0.012/cr), promo/free grants ($0).
+2. **COGS per unit** — the provider cost per unit of that currency's worth of output (e.g. if SKUs are priced to a 50% margin floor, ≈ half the face value).
+3. **Realized price per unit** — what a user actually *pays* per unit, which varies by acquisition path: subscription grant (plan price ÷ included units), each top-up / à-la-carte pack, promo/free grants ($0).
 
 The floor invariant lives in the gap between (1) and (2); the business margin lives in the gap between (2) and (3). Report **both** gaps — collapsing them into one "margin" number hides which lever is doing the work.
 
@@ -244,11 +253,10 @@ Use this as a checklist during Step 2. For each found, populate the inventory.
 - **Voice / TTS / STT**: ElevenLabs, OpenAI Whisper, Deepgram, AssemblyAI — per character or per minute.
 - **Embeddings**: per million tokens, usually cheap but easy to over-call (every search bar keystroke can become a $).
 
-### Image / video / asset providers
-- **Replicate** (`replicate`) — billing model is **per-model, not uniform**. Most hosted image/video models are **flat per-output** (per image, or per second of *output* video by resolution tier) — deterministic from the request. A minority are billed **per second of GPU/run time** ($ per 1,000 run-seconds against the hardware table) — these are **non-deterministic and effectively uncapped**, because cost tracks wall-clock, not clip length. Classify each model (the page says "Priced by multiple properties" for per-output; a hardware/run-time line for the other). Real trap from this skill's origin run: `wan-2.2-animate-replace` is flat per-output-second ($0.02–0.05), but its sibling `wan-2.2-animate-animation` is run-time-metered ($3/1,000 run-sec) and a single generation was observed at ~$0.90 — ~15–30× the sibling. Never average a per-output model with a per-run-second one, and flag every per-run-second path as an uncapped-cost risk.
-- **Fal** (`@fal-ai/*`) — usually per second of output video or per output image, but several models are **token-based** (cost = tokens × rate, tokens scaling with resolution × frames) rather than a flat per-second number. For token-based video, a quoted per-second figure is valid only at the resolution/fps it was computed for — a higher resolution costs proportionally more (e.g. Seedance 2.0 ≈ $0.30/s at 720p but ≈ $0.68/s at 1080p). Don't reuse a low-res per-second rate for a high-res SKU.
-- **Runway / Pika / Luma / Suno** — per-generation or per-second, often **denominated in the provider's own credits**. Convert to USD via the dev/API-portal buy rate (e.g. Runway Act-Two = 5 credits/s × $0.01/credit = $0.05/s, 3s minimum), and note that subscription-bundled credits convert at a *different* effective rate than the dev API.
-- **fal/replicate "extension" chains** — multi-clip pipelines multiply cost; verify the chain-planner caps total spend.
+### Image / video / audio / asset providers
+- **Model hosts** (Replicate, Fal, Modal, RunPod, `replicate` / `@fal-ai/*`) — billing is **per-model, not uniform**: some models are flat **per-output** (per image, or per second of *output*) — deterministic; others are **per second of GPU/machine runtime** — variable and effectively uncapped (see the deterministic-vs-variable note in Step 2). Some are **usage-scaled** (cost = tokens/pixels × rate), where a quoted per-second/per-image figure only holds at the resolution/length it was computed for — a bigger output costs proportionally more, so don't reuse a low-tier rate for a high-tier SKU. Classify each model before pricing it, and never average a deterministic model with a runtime-billed one.
+- **Per-generation media APIs** (Runway, Pika, Luma, Sora, Suno, ElevenLabs, etc.) — per-generation or per-second, often **denominated in the provider's own credits**. Convert to USD via the dev/API-portal buy rate, and note that subscription-bundled credits convert at a *different* effective rate than the dev API.
+- **Multi-step / "extension" chains** — a pipeline that fans one request into N provider calls multiplies cost; verify the planner caps total spend per request.
 
 ### Scraping / data
 - **Apify** (`apify-client`) — per-actor compute (CU) + per-result + dataset storage. The per-actor `usageTotalUsd` from a recent run is the best ground truth.
@@ -310,7 +318,7 @@ Use this as a checklist during Step 2. For each found, populate the inventory.
 
 Err one level higher when redlining users can exploit a path — Critical false positives are cheaper than missed losses.
 
-**Billing-model risk is its own axis.** A path billed **per GPU/run-second** (vs per deterministic output) has cost that scales with wall-clock, not with anything the user pays for — treat it as at least **High** ("uncapped cost path") even if a sample run looks cheap, because a slow or stuck job bills unboundedly. Confirm real spend against the ledger (`*.cost_usd` rows) before concluding it's fine.
+**Billing-model risk is its own axis.** A path whose cost tracks **runtime / wall-clock / bandwidth** (rather than a deterministic per-request or per-output unit) is effectively uncapped — treat it as at least **High** ("uncapped cost path") even if a sample run looks cheap, because a slow, retried, or stuck job bills unboundedly. Confirm real spend against the provider's usage ledger / billing dashboard before concluding it's fine, and check that a cap or budget alarm exists.
 
 ---
 
@@ -345,5 +353,5 @@ Not part of the default run — surface as **"want me to also …?"** after the 
 - **Don't bundle the memory write and the file write as one yes/no.** They are two different commitments — one private, one team-visible.
 - **Don't spawn deeply-nested research agents.** Rate-lookup sub-agents must be **leaf** agents that WebFetch and return a table — a research agent that spawns its own children tends to stall and return status text instead of data (see Step 3). Fan out flat, one agent per provider-family, and demand the findings table as the final message.
 - **Don't trust search-result / aggregator prices over the provider's live page.** Reseller blogs and search snapshots go stale and contradict each other. WebFetch the canonical model/pricing page and treat it as authoritative; mark anything you could only get from an aggregator as an estimate.
-- **Don't attach a rate by product name alone.** Verify the provider + model version + endpoint the code actually calls — the same name (e.g. "Seedance") can be 4× different in price across providers/versions.
-- **Don't reuse a low-resolution per-second rate for a high-resolution SKU** on token-based providers (Fal). Token cost scales with resolution × frames; a 720p rate under-counts 1080p/4K.
+- **Don't attach a rate by product name alone.** Verify the provider + model/SKU + version the code actually calls — the same name can be several times different in price across providers, tiers ("mini"/"fast"/"pro"), and versions.
+- **Don't reuse a rate quoted at one size/tier for a different one** on usage-scaled providers. Token- or resolution-scaled pricing means a figure quoted at a low tier under-counts a higher tier; re-derive per SKU.

@@ -12,7 +12,7 @@
       "name": "cost-analysis",
       "source": "./",
       "description": "Cost & margin audit: inventories paid surfaces, models pricing, and computes per-plan / per-user margins with redlines flagged.",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "keywords": [
         "cost-analysis",
         "margin-analysis",

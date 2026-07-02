@@ -39,23 +39,37 @@ it diffs against them instead of starting cold.
 > provisioning). Fixed monthly infra can be fed into the optional break-even
 > calculator as an input.
 
-## What's new in 1.1.0
+## What's new
 
-Hardened from a real multi-provider audit (image + video render pricing across
-Replicate and Fal, plus Gemini / Anthropic / DeepSeek / Deepgram):
+### 1.2.0 — generalized
 
-- **Parallel rate lookups, done right** — fan web-verification out to one
-  sub-agent per provider-family, kept flat and leaf-only (no nested spawning),
-  each returning a structured price table. Sidesteps the stall-and-return-status
-  failure mode.
-- **Billing-model classification** — distinguishes deterministic *per-output*
-  pricing from *per-GPU-second* run-time metering, and flags the latter as an
-  uncapped-cost risk (the two can differ 15–30× within one model family).
-- **Live pages over aggregators** — prefers the provider's own model/pricing
-  page; treats reseller and search-snapshot numbers as estimates to be flagged.
-- **Version-and-provider verification** — the same product name (e.g.
-  "Seedance") can be 4× different in price across providers and versions, so the
-  skill checks what the code actually routes to before attaching a rate.
+The 1.1.0 lessons were battle-tested on a media-render audit, so their wording
+leaned on image/video specifics. 1.2.0 lifts them into **provider-agnostic
+principles** — they apply just as well to LLM tokens, infra compute, scrapers,
+and metered APIs — and adds a few general improvements:
+
+- **Billing-model taxonomy** — a general *deterministic vs. variable/uncapped*
+  classification you run on every surface, not just GPU models. Runtime-,
+  bandwidth-, and compute-metered paths get flagged for a cap or budget alarm.
+- **Rate-provenance tagging** — every rate carries `repo` / `memory` /
+  `web-confirmed <date>` / `estimate` into the report, so unconfirmed or aging
+  numbers don't blend in with hard ones.
+- **Seat-based (B2B) pricing** added to the pricing-model detection alongside
+  subscriptions, top-ups, usage-based, and free tiers.
+- Reworded the sub-agent, live-page, version-verification, denomination, and
+  unit-stack guidance to drop render-specific examples for neutral ones.
+
+### 1.1.0 — hardened
+
+Folded in from a real multi-provider audit:
+
+- **Parallel rate lookups, done right** — one flat, leaf-only sub-agent per
+  provider-family, each returning a structured price table; sidesteps the
+  stall-and-return-status failure mode.
+- **Live pages over aggregators** — prefers the provider's own pricing page;
+  treats reseller/search-snapshot numbers as estimates to be flagged.
+- **Version-and-provider verification** — the same product name can be several
+  times different in price across providers, tiers, and versions.
 - **Reprice / denomination reconciliation** — reads dated rate-change memories
   that post-date the newest snapshot so redenominated units aren't quoted stale.
 - **Three-layer unit stack** — separates face value, COGS-per-unit, and the
@@ -75,7 +89,7 @@ In Claude Code, run:
 ```
 
 Update later with `/plugin marketplace update cost-analysis`. Because the plugin
-pins `version: 1.1.0`, you'll receive changes when that version is bumped.
+pins `version: 1.2.0`, you'll receive changes when that version is bumped.
 
 ### Option B — Drop the skill in manually
 
